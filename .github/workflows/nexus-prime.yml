@@ -1,0 +1,205 @@
+name: Final Puss Nexus Prime
+
+on:
+  repository_dispatch:
+    types: [rebirth-trigger]
+  workflow_dispatch:
+    inputs:
+      run_mode:
+        description: Boot validation or full organism cycle
+        required: true
+        default: full
+        type: choice
+        options:
+          - boot
+          - full
+      run_hours:
+        description: Hours to run for full mode
+        required: false
+        default: "5.0"
+        type: string
+  push:
+    branches: [main]
+
+concurrency:
+  group: nexus-prime-${{ github.repository }}
+  cancel-in-progress: true
+
+env:
+  RUN_HOURS: "4.25"
+  NEXUS_MAX_RUNTIME_HOURS: "4.25"
+  NEXUS_SHUTDOWN_MARGIN_SECONDS: "2100"
+  NEXUS_X_POST_ATTEMPTS: "1"
+  NEXUS_REQUIRE_MEDIA_FOR_X_POSTS: "1"
+  NEXUS_X_HANDLE: "NexusPrime1112"
+  NEXUS_X_SEARCH_MODE: "top"
+  NEXUS_ENABLE_X_COMMENTS: "1"
+  NEXUS_ENABLE_TREND_COMMENTS: "1"
+  NEXUS_MAX_TREND_COMMENTS_PER_CYCLE: "2"
+  NEXUS_COMMENT_COOLDOWN_SECONDS: "18"
+  NEXUS_IMPORT_LEGACY_LOGINS: "0"
+  NEXUS_REPO_TEMPLATE: "v{iteration}"
+  NEXUS_REPO_PRIVATE: "0"
+  NEXUS_DELETE_PREVIOUS_REPO_ON_BOOT: "1"
+  NEXUS_TRIGGER_AFTER_PUSH: "1"
+  NEXUS_SNAPSHOT_RETENTION: "8"
+  NEXUS_ENABLE_LOCAL_OLLAMA: "1"
+  NEXUS_PREFER_LOCAL_OLLAMA: "1"
+  NEXUS_OLLAMA_BOOT_TIMEOUT_SECONDS: "90"
+  NEXUS_PRIMARY_MODEL: "qwen2.5:1.5b"
+  NEXUS_OLLAMA_MODELS: "qwen2.5:1.5b,deepseek-coder:1.3b,qwen2.5:0.5b,tinyllama"
+  NEXUS_MODEL_CODING: "deepseek-coder:1.3b"
+  NEXUS_MODEL_PLANNING: "qwen2.5:1.5b"
+  NEXUS_MODEL_CHAT: "qwen2.5:1.5b"
+  NEXUS_MODEL_SUMMARY: "qwen2.5:0.5b"
+  NEXUS_MODEL_DEBUG: "deepseek-coder:1.3b"
+  NEXUS_MODEL_QUICK: "qwen2.5:0.5b"
+  NEXUS_CHROMIUM_PROFILE_REPO: "https://github.com/NexusPrime1112/cpr.git"
+  NEXUS_CHROMIUM_PROFILE_REF: ""
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  run:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 355
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Hydrate Nexus Prime Chromium profile
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+          rm -rf chromium .nexus-chromium-profile
+          mkdir -p chromium/Default
+          clone_ok=0
+          AUTH_REPO=$(echo "${{ env.NEXUS_CHROMIUM_PROFILE_REPO }}" | sed "s|https://|https://x-access-token:${GH_PAT}@|")
+          if [ -n "${{ env.NEXUS_CHROMIUM_PROFILE_REF }}" ]; then
+            if git clone --depth=1 --branch "${{ env.NEXUS_CHROMIUM_PROFILE_REF }}" "$AUTH_REPO" .nexus-chromium-profile; then
+              clone_ok=1
+            else
+              echo "Profile branch '${{ env.NEXUS_CHROMIUM_PROFILE_REF }}' is unavailable; retrying default branch."
+              rm -rf .nexus-chromium-profile
+              git clone --depth=1 "$AUTH_REPO" .nexus-chromium-profile && clone_ok=1 || true
+            fi
+          else
+            git clone --depth=1 "$AUTH_REPO" .nexus-chromium-profile && clone_ok=1 || true
+          fi
+          if [ "${clone_ok}" = "1" ] && [ -d ".nexus-chromium-profile/.git" ]; then
+            source_dir=".nexus-chromium-profile"
+            if [ -d ".nexus-chromium-profile/chromium" ]; then
+              source_dir=".nexus-chromium-profile/chromium"
+            fi
+            shopt -s dotglob nullglob
+            copied=0
+            for item in "${source_dir}"/*; do
+              if [ "$(basename "${item}")" = ".git" ]; then
+                continue
+              fi
+              cp -a "${item}" chromium/
+              copied=1
+            done
+            shopt -u dotglob nullglob
+            if [ "${copied}" = "0" ]; then
+              echo "Chromium profile repo is empty; continuing with a fresh chromium/Default directory."
+            fi
+          else
+            echo "Chromium profile repo is unavailable; continuing with a fresh chromium/Default directory."
+          fi
+          find chromium \( -name 'Singleton*' -o -name 'DevToolsActivePort' \) -print -delete || true
+          rm -rf .nexus-chromium-profile
+          find chromium -maxdepth 2 -mindepth 1 | sort | sed -n '1,40p'
+
+      - name: Build Nexus Prime container
+        run: docker build -t nexus-prime:latest .
+
+      - name: Run Nexus Prime inside Docker
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GH_PAT_FG: ${{ secrets.GH_PAT_FG }}
+          OLLAMA_HOST: ${{ secrets.OLLAMA_HOST }}
+          NEXUS_GITHUB_USERNAME: ${{ secrets.NEXUS_GITHUB_USERNAME }}
+          NEXUS_GITHUB_PASSWORD: ${{ secrets.NEXUS_GITHUB_PASSWORD }}
+          NEXUS_X_USERNAME: ${{ secrets.NEXUS_X_USERNAME }}
+          NEXUS_X_PASSWORD: ${{ secrets.NEXUS_X_PASSWORD }}
+          NEXUS_X_DM_PASSCODE: ${{ secrets.NEXUS_X_DM_PASSCODE }}
+          NEXUS_GOOGLE_EMAIL: ${{ secrets.NEXUS_GOOGLE_EMAIL }}
+          NEXUS_GOOGLE_PASSWORD: ${{ secrets.NEXUS_GOOGLE_PASSWORD }}
+          NEXUS_GEMINI_EMAIL: ${{ secrets.NEXUS_GEMINI_EMAIL }}
+          NEXUS_GEMINI_PASSWORD: ${{ secrets.NEXUS_GEMINI_PASSWORD }}
+          NEXUS_CHATGPT_EMAIL: ${{ secrets.NEXUS_CHATGPT_EMAIL }}
+          NEXUS_CHATGPT_PASSWORD: ${{ secrets.NEXUS_CHATGPT_PASSWORD }}
+          NEXUS_DEEPSEEK_EMAIL: ${{ secrets.NEXUS_DEEPSEEK_EMAIL }}
+          NEXUS_DEEPSEEK_PASSWORD: ${{ secrets.NEXUS_DEEPSEEK_PASSWORD }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          HOURS="$RUN_HOURS"
+          BOOT_ONLY="0"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ github.event.inputs.run_mode }}" = "boot" ]; then
+              BOOT_ONLY="1"
+            fi
+            if [ -n "${{ github.event.inputs.run_hours }}" ]; then
+              HOURS="${{ github.event.inputs.run_hours }}"
+            fi
+          fi
+
+          docker run --rm --shm-size=2g \
+            -e GH_PAT \
+            -e GH_PAT_FG \
+            -e OLLAMA_HOST \
+            -e GITHUB_REPOSITORY \
+            -e GITHUB_ACTIONS=true \
+            -e CI=true \
+            -e CHROMIUM_PATH=/usr/bin/ungoogled-chromium \
+            -e NEXUS_GITHUB_USERNAME \
+            -e NEXUS_GITHUB_PASSWORD \
+            -e NEXUS_X_USERNAME \
+            -e NEXUS_X_PASSWORD \
+            -e NEXUS_X_DM_PASSCODE \
+            -e NEXUS_X_HANDLE="${{ env.NEXUS_X_HANDLE }}" \
+            -e NEXUS_GOOGLE_EMAIL \
+            -e NEXUS_GOOGLE_PASSWORD \
+            -e NEXUS_GEMINI_EMAIL \
+            -e NEXUS_GEMINI_PASSWORD \
+            -e NEXUS_CHATGPT_EMAIL \
+            -e NEXUS_CHATGPT_PASSWORD \
+            -e NEXUS_DEEPSEEK_EMAIL \
+            -e NEXUS_DEEPSEEK_PASSWORD \
+            -e NEXUS_BOOT_SEQUENCE_ONLY="$BOOT_ONLY" \
+            -e NEXUS_RUN_HOURS_OVERRIDE="$HOURS" \
+            -e NEXUS_MAX_RUNTIME_HOURS="${{ env.NEXUS_MAX_RUNTIME_HOURS }}" \
+            -e NEXUS_SHUTDOWN_MARGIN_SECONDS="${{ env.NEXUS_SHUTDOWN_MARGIN_SECONDS }}" \
+            -e NEXUS_X_POST_ATTEMPTS="${{ env.NEXUS_X_POST_ATTEMPTS }}" \
+            -e NEXUS_REQUIRE_MEDIA_FOR_X_POSTS="${{ env.NEXUS_REQUIRE_MEDIA_FOR_X_POSTS }}" \
+            -e NEXUS_X_SEARCH_MODE="${{ env.NEXUS_X_SEARCH_MODE }}" \
+            -e NEXUS_ENABLE_X_COMMENTS="${{ env.NEXUS_ENABLE_X_COMMENTS }}" \
+            -e NEXUS_ENABLE_TREND_COMMENTS="${{ env.NEXUS_ENABLE_TREND_COMMENTS }}" \
+            -e NEXUS_MAX_TREND_COMMENTS_PER_CYCLE="${{ env.NEXUS_MAX_TREND_COMMENTS_PER_CYCLE }}" \
+            -e NEXUS_COMMENT_COOLDOWN_SECONDS="${{ env.NEXUS_COMMENT_COOLDOWN_SECONDS }}" \
+            -e NEXUS_IMPORT_LEGACY_LOGINS="${{ env.NEXUS_IMPORT_LEGACY_LOGINS }}" \
+            -e NEXUS_REPO_TEMPLATE="${{ env.NEXUS_REPO_TEMPLATE }}" \
+            -e NEXUS_REPO_PRIVATE="${{ env.NEXUS_REPO_PRIVATE }}" \
+            -e NEXUS_DELETE_PREVIOUS_REPO_ON_BOOT="${{ env.NEXUS_DELETE_PREVIOUS_REPO_ON_BOOT }}" \
+            -e NEXUS_TRIGGER_AFTER_PUSH="${{ env.NEXUS_TRIGGER_AFTER_PUSH }}" \
+            -e NEXUS_SNAPSHOT_RETENTION="${{ env.NEXUS_SNAPSHOT_RETENTION }}" \
+            -e NEXUS_ENABLE_LOCAL_OLLAMA="${{ env.NEXUS_ENABLE_LOCAL_OLLAMA }}" \
+            -e NEXUS_PREFER_LOCAL_OLLAMA="${{ env.NEXUS_PREFER_LOCAL_OLLAMA }}" \
+            -e NEXUS_OLLAMA_BOOT_TIMEOUT_SECONDS="${{ env.NEXUS_OLLAMA_BOOT_TIMEOUT_SECONDS }}" \
+            -e NEXUS_PRIMARY_MODEL="${{ env.NEXUS_PRIMARY_MODEL }}" \
+            -e NEXUS_OLLAMA_MODELS="${{ env.NEXUS_OLLAMA_MODELS }}" \
+            -e NEXUS_MODEL_CODING="${{ env.NEXUS_MODEL_CODING }}" \
+            -e NEXUS_MODEL_PLANNING="${{ env.NEXUS_MODEL_PLANNING }}" \
+            -e NEXUS_MODEL_CHAT="${{ env.NEXUS_MODEL_CHAT }}" \
+            -e NEXUS_MODEL_SUMMARY="${{ env.NEXUS_MODEL_SUMMARY }}" \
+            -e NEXUS_MODEL_DEBUG="${{ env.NEXUS_MODEL_DEBUG }}" \
+            -e NEXUS_MODEL_QUICK="${{ env.NEXUS_MODEL_QUICK }}" \
+            -e PYTHONUNBUFFERED=1 \
+            -v "${{ github.workspace }}:/app" \
+            -w /app \
+            nexus-prime:latest \
+            bash -lc 'mkdir -p data/snapshots chromium && [ -f iteration.txt ] || echo "1" > iteration.txt && [ -f task.txt ] || : > task.txt && [ -f prev_repo.txt ] || : > prev_repo.txt && cp iteration.txt data/iteration.txt || true && chmod +x scripts/bootstrap_ollama.sh && . ./scripts/bootstrap_ollama.sh && if [ "$NEXUS_BOOT_SEQUENCE_ONLY" = "1" ]; then python3 nexus_prime.py --run-hours "$NEXUS_RUN_HOURS_OVERRIDE" --boot-validation-only; else python3 nexus_prime.py --run-hours "$NEXUS_RUN_HOURS_OVERRIDE"; fi'

@@ -1,0 +1,15 @@
+2026/05/24-09:33:30.281 ece Reusing MANIFEST /home/dhruv/Desktop/uko/cpr/Default/IndexedDB/https_chat.deepseek.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/05/24-09:33:30.282 ece Recovering log #6
+2026/05/24-09:33:30.284 ece Reusing old log /home/dhruv/Desktop/uko/cpr/Default/IndexedDB/https_chat.deepseek.com_0.indexeddb.leveldb/000006.log 
+2026/05/24-09:33:30.284 ece Delete type=2 #5
+2026/05/24-09:33:30.330 eee Level-0 table #11: started
+2026/05/24-09:33:30.336 eee Level-0 table #11: 8743 bytes OK
+2026/05/24-09:33:30.347 eee Delete type=0 #6
+2026/05/24-09:33:30.350 ece Manual compaction at level-0 from '\x00\x03\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x04\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/05/24-09:33:30.352 ece Manual compaction at level-1 from '\x00\x03\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x04\x00\x00\x00' @ 0 : 0; will stop at '\x00\x05\x00\x00\x05' @ 341 : 1
+2026/05/24-09:33:30.354 ece Compacting 1@1 + 1@2 files
+2026/05/24-09:33:30.368 ece Generated table #12@1: 26 keys, 7053 bytes
+2026/05/24-09:33:30.368 ece Compacted 1@1 + 1@2 files => 7053 bytes
+2026/05/24-09:33:30.371 ece compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/05/24-09:33:30.371 ece Delete type=2 #11
+2026/05/24-09:33:30.371 ece Manual compaction at level-1 from '\x00\x05\x00\x00\x05' @ 341 : 1 .. '\x00\x04\x00\x00\x00' @ 0 : 0; will stop at (end)
