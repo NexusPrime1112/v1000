@@ -322,6 +322,10 @@ class NexusPrime:
             r"\bDo not\b",
             r"\bReturn exactly\b",
             r"\bpublic reply text only\b",
+            r"\bfresh\s+(?:angle|perspective)\b",
+            r"\bnew\s+angle\s+(?:here|to|on)\b",
+            r"\bhere(?:'s| is)\s+(?:a\s+)?(?:fresh|new)\s+angle\b",
+            r"\bsure[,:\s]+(?:here|let|this)\b",
         )
         if any(re.search(pattern, raw, flags=re.IGNORECASE) for pattern in leak_patterns):
             return ""
@@ -369,6 +373,10 @@ class NexusPrime:
             "headlines indicate",
             "predictive framework",
             "sovereignty signal",
+            "fresh angle",
+            "fresh perspective",
+            "new angle here",
+            "sure,",
         )
         if any(phrase in cleaned.lower() for phrase in bad_phrases):
             return ""
@@ -422,7 +430,8 @@ class NexusPrime:
         deterministic = self._llm_post_fallback()
         if deterministic and not self._looks_like_recent_post(deterministic):
             return deterministic
-        return _sanitize_generated_text(f"{deterministic} New angle.", limit=280)
+        fallback = deterministic or self._llm_post_fallback()
+        return self._public_safe_text(fallback, limit=280)
 
     def _candidate_media_url(self, candidate: dict) -> str:
         for key in ("video_url", "image_url"):
@@ -834,8 +843,15 @@ class NexusPrime:
         self.memory.weaken_beliefs()
 
     def _next_repo_name(self, next_iteration: int) -> str:
-        # Force all data and automation to stay in v1000 per user request
-        return "v1000"
+        template = os.environ.get("NEXUS_REPO_TEMPLATE", "v{iteration}").strip() or "v{iteration}"
+        try:
+            candidate = template.format(iteration=next_iteration, current_repo=self.current_repo, current=self.current_repo)
+        except Exception:
+            candidate = f"v{next_iteration}"
+        candidate = candidate.strip().replace(" ", "-")
+        if not candidate or candidate == self.current_repo:
+            return f"v{next_iteration}"
+        return candidate
 
     def _max_iteration(self) -> int:
         raw = os.environ.get("NEXUS_MAX_ITERATION", "0").strip()
@@ -1069,7 +1085,15 @@ class NexusPrime:
                 self.browser.stop()
             self.memory.close()
             return {"mode": "boot_validation", "iteration": self.iteration, "current_repo": self.current_repo, "first_post": first_post, "x_posted": self.last_posted_ok}
-        end_at = time.time() + (effective_hours * 3600)
+        shutdown_margin = max(300, _env_int("NEXUS_SHUTDOWN_MARGIN_SECONDS", 1500))
+        active_seconds = max(60, int(effective_hours * 3600) - shutdown_margin)
+        end_at = time.time() + active_seconds
+        self._trace_runtime(
+            "schedule",
+            "active_window",
+            active_seconds=active_seconds,
+            shutdown_margin_seconds=shutdown_margin,
+        )
         while time.time() < end_at:
             try:
                 schedule.run_pending()
